@@ -14,9 +14,7 @@ median/mode from the test set itself instead of reusing what was learned
 from train.
 
 **Why it matters:** the test set must never be used to learn any parameter.
-In production, a model can't "peek" at the full incoming batch to compute a
-median before predicting on it — the same rule applies here. Fitting
-separately on test broke train/test distribution consistency.
+Fitting separately on test broke train/test distribution consistency.
 
 **Fix:** `fit_transform` on train, `transform` only on test, for both the
 numeric and categorical imputers.
@@ -29,11 +27,6 @@ numeric and categorical imputers.
 `id` was treated as a normal feature column and flowed through the whole
 pipeline into the model.
 
-**Why it matters:** with synthetic competition data, `id` can carry a
-spurious correlation with the target if rows were generated in blocks by
-class. A model can latch onto that pattern in-sample without it generalizing
-to the real test set.
-
 **Fix:** read both CSVs with `index_col="id"`.
 
 ---
@@ -41,23 +34,15 @@ to the real test set.
 ## 3. Metric mismatch: accuracy vs. balanced accuracy
 
 **Problem:** CV was scored with plain `accuracy_score`, giving ~0.965,
-while the Kaggle public leaderboard showed ~0.855 for the same model — a
-gap large enough to suspect a serious bug or data leak.
+while the Kaggle public leaderboard showed ~0.855 for the same model.
 
-**Investigation:** checked the target class balance
-(`at-risk` ~86%, `unhealthy` ~8.4%, `fit` ~5.8%) and the per-class
-classification report — macro-average recall was ~0.86, almost exactly
-matching the leaderboard score. Confirmed via the Kaggle "Evaluation" tab:
-**the competition scores submissions on Balanced Accuracy**, not plain
-accuracy.
-
-**Why it matters:** with this much class imbalance, plain accuracy is
-misleading — a model can score high just by favoring the majority class
-(`at-risk`) without actually learning to separate the minority classes.
+**Investigation:** target class balance is `at-risk` ~86%, `unhealthy`
+~8.4%, `fit` ~5.8%. Macro-average recall was ~0.86, almost exactly matching
+the leaderboard. Confirmed via the Kaggle "Evaluation" tab: **the
+competition scores submissions on Balanced Accuracy**, not plain accuracy.
 
 **Fix:** switched all CV scoring in `04_Modeling.ipynb` from
-`accuracy_score` to `balanced_accuracy_score`, matching what Kaggle actually
-grades.
+`accuracy_score` to `balanced_accuracy_score`.
 
 ---
 
@@ -149,10 +134,85 @@ leaderboard score after submission: **0.949**.
 
 ---
 
-## Next steps under consideration
+## 7. Re-tested dropped features on the new baseline — still no improvement
+
+Re-tested `stress_sleep_interaction`, `bmi_category`, `lifestyle_score` on
+the 0.9492 baseline (after all missing flags), plus a new
+`total_missing_count` feature. None improved OOF balanced accuracy beyond
++0.001.
+
+**Takeaway:** tree-based models (CatBoost) already learn feature
+interactions automatically through successive splits — manually engineered
+interaction/composite features add little once the base signal (here: the
+missing-value pattern) is already captured. Manual feature engineering has
+diminishing returns once a tree model has strong signal to split on.
+
+---
+
+## 8. Cross-family ensemble — also didn't beat CatBoost alone
+
+Tried CatBoost + Logistic Regression + MLP (genuinely different model
+families, unlike the same-family tree ensemble in #4). OOF-weighted
+(power-4) combination scored 0.94711 vs. CatBoost alone 0.94910 — still
+lower.
+
+**Why:** the dominant signal in the engineered feature set is the binary
+`_is_missing` flags — a near-linear signal that Logistic Regression and MLP
+pick up on just as well as CatBoost, so their errors ended up correlated
+with CatBoost's anyway (ensemble weights came out nearly balanced: 0.39 /
+0.33 / 0.28, meaning all 3 models scored similarly on this data). Model-
+family diversity only helps when the dominant signal actually needs
+different model mechanics to capture — that wasn't the case here.
+
+**Decision: CatBoost alone remains final.** Kept in `06_Final_Submission.ipynb`
+section 7 for documentation, clearly marked as an experiment that wasn't
+used for the official submission.
+
+---
+
+## 9. Seed averaging — small final gain, project wrap-up
+
+Trained the tuned CatBoost model with multiple random seeds and averaged
+`predict_proba` across them (reduces variance from a single initialization).
+
+| N_SEEDS | Public leaderboard |
+|---|---|
+| 3 | 0.94984 |
+| 7 | 0.94979 |
+
+Difference between 3 and 7 seeds is within noise (0.00005) — **kept
+`N_SEEDS = 3`**, cheaper for virtually identical result.
+
+**Project wrap-up — final pipeline summary:**
+| Stage | Balanced accuracy (CV) | Leaderboard |
+|---|---|---|
+| Baseline preprocessing only | 0.859 (majority-class floor) | — |
+| + class weighting (CatBoost) | 0.9086 | 0.9059 |
+| + missing-value flags (all columns) | 0.9492 | — |
+| + light hyperparameter tuning | ~0.953 | 0.949 |
+| + seed averaging (N=3), final | — | **0.94984** |
+
+**What was tried and explicitly ruled out (documented, not just skipped):**
+- Custom class weight grids beyond `'balanced'` (#4)
+- Same-family tree ensemble — RandomForest + CatBoost + LightGBM (#4)
+- Manual interaction/composite features on the post-missing-flag baseline (#7)
+- Cross-family ensemble — CatBoost + Logistic Regression + MLP (#8)
+
+**Project considered complete at this point.** Remaining possible gains
+(deeper Optuna search, probability threshold tuning, stacking, target
+encoding) are lower-ROI and left as "next steps" below rather than pursued
+further — diminishing returns relative to time invested, and the
+project's main goal (a documented, defensible ML pipeline for a portfolio)
+is met.
+
+---
+
+## Next steps (not pursued further, left for reference)
 
 - Threshold/probability adjustment on `predict_proba` instead of raw `argmax`
-- Deeper hyperparameter search (currently only a small manual grid was tried)
-- Revisit whether `stress_level × sleep_duration` or other interactions help
-  now that the missing-flag features are in the mix (they were tested
-  before the flags were added, so the combined effect wasn't checked)
+- Deeper automated hyperparameter search (Optuna/random search over more
+  trials — only a small manual grid was tried)
+- Stacking (meta-model over CatBoost/Logistic/MLP outputs) instead of a
+  fixed-weight average
+- K-fold target encoding for categoricals instead of one-hot, as an
+  alternative to the current encoding in `03_Preprocessing`
