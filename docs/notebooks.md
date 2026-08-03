@@ -35,10 +35,10 @@ condition, numeric correlations). Feeds ideas into `05_Feature_Engineering`.
 
 Reads: processed_train.csv, processed_test.csv Writes: submission/checkpoint_<model>.csv, submission/checkpoint_ensemble.csv Purpose: compare RandomForest, CatBoost, LightGBM with 5-fold Stratified CV, scored on balanced accuracy. All models use class weighting. Tried custom weight grids and probability-averaging ensembles — neither beat CatBoost alone (see decisions.md #4). Decision: CatBoost alone, no ensemble. OOF balanced accuracy 0.9086, leaderboard 0.9059.
 
-05_Feature_Engineering.ipynb
+## 05_Feature_Engineering.ipynb
 
 Reads: processed_train.csv, processed_test.csv, train.csv/test.csv (raw, for missing-value masks), feature_importance_rf.csv Writes: engineered_train.csv, engineered_test.csv Purpose: test candidate features one at a time against the CatBoost baseline (0.9086), keep only if OOF balanced accuracy improves by >0.001. Winning features: _is_missing flags for stress_level, sleep_duration, sleep_quality, and the remaining columns — jumped OOF balanced accuracy from 0.9086 to 0.9492. See decisions.md #5 for why this worked. Interaction terms, BMI bucketing, and the composite lifestyle score were all tested and dropped (no improvement).
 
-06_Final_Submission.ipynb
+## 06_Final_Submission.ipynb
 
 Reads: engineered_train.csv, engineered_test.csv Writes: submission/submission_final.csv Purpose: confirm the engineered feature set on full CV, light hyperparameter tuning pass (depth/learning_rate), train CatBoost on 100% of training data, export the official submission. Final CV: ~0.953 balanced accuracy. Public leaderboard: 0.949. See decisions.md #6 for the CV-vs-leaderboard gap discussion.
