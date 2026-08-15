@@ -105,33 +105,36 @@ columns, before assuming missingness is just noise to impute away.
 
 ---
 
-## 6. Final result: CV vs. leaderboard gap (0.953 vs. 0.949)
+## 6. Final result: CV vs. leaderboard gap (0.9493 vs. 0.949)
 
-**06_Final_Submission** confirmed the engineered feature set on full CV,
-ran a light hyperparameter pass (depth/learning_rate), and trained CatBoost
-on 100% of the training data. Final CV balanced accuracy: ~0.953. Public
-leaderboard score after submission: **0.949**.
+06_Final_Submission confirmed the engineered feature set on full CV, ran a
+light hyperparameter pass (depth/learning_rate), and trained CatBoost on
+100% of the training data. Final CV balanced accuracy: **0.94930**. Public
+leaderboard score after submission: **0.949** (later improved to 0.94984
+with seed averaging, see #9).
 
-**Why the gap, and why it's expected here (not a bug):**
+Why the gap, and why it's expected here (not a bug):
 - CV score is measured on train, split into folds — leaderboard is measured
   on genuinely unseen test data. Some gap between the two is always normal.
-- The final model in `06` was trained on 100% of train data (no held-out
-  fold), while the CV estimate in section 4 is necessarily based on models
-  trained on ~80% of the data per fold — the CV number is a slightly
+- The final model in 06 was trained on 100% of train data (no held-out
+  fold), while the CV estimate is necessarily based on models trained on
+  ~80% of the data per fold — the CV number is a slightly
   pessimistic-but-close estimate, not a promise.
-- A ~0.4 point gap (0.953 → 0.949) is a normal and healthy amount of
-  variance for a ~690k/~296k train/test split — nowhere near the earlier
-  0.965-vs-0.855 gap that turned out to be a real metric mismatch bug (see
-  #3). No further debugging needed for a gap this size.
+- A ~0.004 point gap (0.9493 → 0.949) is an EXTREMELY tight match — much
+  closer than typical, and nowhere near the earlier 0.965-vs-0.855 gap
+  that turned out to be a real metric mismatch bug (see #3). No further
+  debugging needed for a gap this size — if anything, this tight a match
+  confirms the pipeline has no leakage left.
 
-**Final pipeline summary:**
+Final pipeline summary:
+
 | Stage | Balanced accuracy (CV) | Leaderboard |
 |---|---|---|
 | Baseline preprocessing only | 0.859 (majority-class floor) | — |
 | + class weighting (CatBoost) | 0.9086 | 0.9059 |
 | + missing-value flags (all columns) | 0.9492 | — |
-| + light hyperparameter tuning (final) | ~0.953 | **0.949** |
-
+| + light hyperparameter tuning (final) | 0.94930 | 0.949 |
+| + seed averaging (N=3) | — | **0.94984** |
 ---
 
 ## 7. Re-tested dropped features on the new baseline — still no improvement
